@@ -5077,6 +5077,153 @@ end
 
 return frame
 end
+
+-- Create Chest System UI Function
+local function createChestSystemUI(parent)
+  local chestFrame = Instance.new("Frame")
+  chestFrame.Name = "ChestSystemFrame"
+  chestFrame.Size = UDim2.new(1, 0, 0, 200)
+  chestFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+  chestFrame.BorderSizePixel = 0
+  chestFrame.Parent = parent
+  chestFrame.LayoutOrder = 1
+
+  local chestCorner = Instance.new("UICorner")
+  chestCorner.CornerRadius = UDim.new(0, 8)
+  chestCorner.Parent = chestFrame
+
+  -- Title
+  local titleLabel = Instance.new("TextLabel")
+  titleLabel.Name = "ChestTitleLabel"
+  titleLabel.Size = UDim2.new(1, 0, 0, 30)
+  titleLabel.Position = UDim2.new(0, 0, 0, 5)
+  titleLabel.BackgroundTransparency = 1
+  titleLabel.Text = "Chest System"
+  titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+  titleLabel.Font = Enum.Font.GothamBold
+  titleLabel.TextSize = 16
+  titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+  titleLabel.Parent = chestFrame
+
+  -- Scan Chests Button
+  local scanButton = Instance.new("TextButton")
+  scanButton.Name = "ScanChestsButton"
+  scanButton.Size = UDim2.new(1, -20, 0, 30)
+  scanButton.Position = UDim2.new(0, 10, 0, 40)
+  scanButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+  scanButton.BorderSizePixel = 0
+  scanButton.Text = "Scan for Chests"
+  scanButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+  scanButton.Font = Enum.Font.GothamBold
+  scanButton.TextSize = 14
+  scanButton.Parent = chestFrame
+
+  local scanCorner = Instance.new("UICorner")
+  scanCorner.CornerRadius = UDim.new(0, 6)
+  scanCorner.Parent = scanButton
+
+  -- Chest List ScrollFrame
+  local chestScrollFrame = Instance.new("ScrollingFrame")
+  chestScrollFrame.Name = "ChestScrollFrame"
+  chestScrollFrame.Size = UDim2.new(1, -20, 0, 120)
+  chestScrollFrame.Position = UDim2.new(0, 10, 0, 75)
+  chestScrollFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+  chestScrollFrame.BorderSizePixel = 0
+  chestScrollFrame.ScrollBarThickness = 4
+  chestScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 150, 255)
+  chestScrollFrame.Parent = chestFrame
+
+  local scrollCorner = Instance.new("UICorner")
+  scrollCorner.CornerRadius = UDim.new(0, 6)
+  scrollCorner.Parent = chestScrollFrame
+
+  local chestListLayout = Instance.new("UIListLayout")
+  chestListLayout.FillDirection = Enum.FillDirection.Vertical
+  chestListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+  chestListLayout.Padding = UDim.new(0, 2)
+  chestListLayout.Parent = chestScrollFrame
+
+  -- Function to update chest list
+  local function updateChestList()
+    -- Clear existing items
+    for _, child in pairs(chestScrollFrame:GetChildren()) do
+      if child:IsA("TextButton") then
+        child:Destroy()
+      end
+    end
+
+    local chests = findAllChests()
+    
+    if #chests == 0 then
+      local noChestsLabel = Instance.new("TextLabel")
+      noChestsLabel.Name = "NoChestsLabel"
+      noChestsLabel.Size = UDim2.new(1, 0, 0, 25)
+      noChestsLabel.BackgroundTransparency = 1
+      noChestsLabel.Text = "No chests found"
+      noChestsLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+      noChestsLabel.Font = Enum.Font.Gotham
+      noChestsLabel.TextSize = 12
+      noChestsLabel.Parent = chestScrollFrame
+      return
+    end
+
+    for i, chestData in ipairs(chests) do
+      local chestButton = Instance.new("TextButton")
+      chestButton.Name = "ChestButton" .. i
+      chestButton.Size = UDim2.new(1, 0, 0, 25)
+      chestButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+      chestButton.BorderSizePixel = 0
+      chestButton.Text = chestData.name .. " (" .. math.floor(chestData.position.X) .. "," .. math.floor(chestData.position.Z) .. ")"
+      chestButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+      chestButton.Font = Enum.Font.Gotham
+      chestButton.TextSize = 11
+      chestButton.LayoutOrder = i
+      chestButton.Parent = chestScrollFrame
+
+      local buttonCorner = Instance.new("UICorner")
+      buttonCorner.CornerRadius = UDim.new(0, 4)
+      buttonCorner.Parent = chestButton
+
+      -- Teleport to chest functionality
+      chestButton.MouseButton1Click:Connect(function()
+        local player = game.Players.LocalPlayer
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+          local targetPosition = chestData.position + Vector3.new(0, TELEPORT_Y_OFFSET, 0)
+          player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+          showNotification("Teleported to " .. chestData.name, 2)
+        end
+      end)
+
+      -- Hover effects
+      chestButton.MouseEnter:Connect(function()
+        chestButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+      end)
+
+      chestButton.MouseLeave:Connect(function()
+        chestButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+      end)
+    end
+
+    chestScrollFrame.CanvasSize = UDim2.new(0, 0, 0, #chests * 27)
+  end
+
+  -- Scan button functionality
+  scanButton.MouseButton1Click:Connect(function()
+    scanButton.Text = "Scanning..."
+    scanButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    
+    spawn(function()
+      updateChestList()
+      wait(0.5)
+      scanButton.Text = "Scan for Chests"
+      scanButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+      showNotification("Chest scan completed", 2)
+    end)
+  end)
+
+  return chestFrame
+end
+
 local function createItemPage(parent)
 local page = Instance.new("ScrollingFrame")
 page.Name = "ItemPage"
