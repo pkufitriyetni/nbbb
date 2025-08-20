@@ -346,10 +346,12 @@ local NoFogConnection = nil
 local originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
 
 -- Enhanced No Fog Variables
-local processedFogObjects = {}
-local lastAreaCheck = 0
-local currentPlayerArea = nil
-local fogMonitoringConnections = {}
+local NoFogEnhanced = {
+    processedFogObjects = {},
+    lastAreaCheck = 0,
+    currentPlayerArea = nil,
+    fogMonitoringConnections = {}
+}
 
 -- Lighting Control Variables
 local AlwaysBrightEnabled = false
@@ -1018,11 +1020,11 @@ local function detectAreaChange()
         local currentTime = tick()
         
         -- Check if enough time has passed since last check
-        if currentTime - lastAreaCheck < 2 then
+        if currentTime - NoFogEnhanced.lastAreaCheck < 2 then
             return false
         end
         
-        lastAreaCheck = currentTime
+        NoFogEnhanced.lastAreaCheck = currentTime
         
         -- Simple area detection based on position ranges
         local newArea = nil
@@ -1040,8 +1042,8 @@ local function detectAreaChange()
         end
         
         -- Check if area changed
-        if currentPlayerArea ~= newArea then
-            currentPlayerArea = newArea
+        if NoFogEnhanced.currentPlayerArea ~= newArea then
+            NoFogEnhanced.currentPlayerArea = newArea
             return true
         end
         
@@ -1110,9 +1112,9 @@ local function toggleNoFog(enabled)
         originalFogColor = Lighting.FogColor
         
         -- Reset area tracking
-        currentPlayerArea = nil
-        lastAreaCheck = 0
-        processedFogObjects = {}
+        NoFogEnhanced.currentPlayerArea = nil
+        NoFogEnhanced.lastAreaCheck = 0
+        NoFogEnhanced.processedFogObjects = {}
 
         -- Apply no fog immediately
         applyNoFog()
@@ -1123,7 +1125,7 @@ local function toggleNoFog(enabled)
         NoFogConnection = RunService.RenderStepped:Connect(applyNoFog)
         
         -- 2. Monitor workspace changes for new objects/areas
-        fogMonitoringConnections.workspaceMonitor = workspace.DescendantAdded:Connect(function(obj)
+        NoFogEnhanced.fogMonitoringConnections.workspaceMonitor = workspace.DescendantAdded:Connect(function(obj)
             if NoFogEnabled then
                 wait(0.1) -- Small delay to let object fully load
                 pcall(function()
@@ -1175,34 +1177,34 @@ local function toggleNoFog(enabled)
         end)
         
         -- 3. Monitor Lighting property changes (in case game scripts override them)
-        fogMonitoringConnections.lightingMonitor = Lighting:GetPropertyChangedSignal("FogStart"):Connect(function()
+        NoFogEnhanced.fogMonitoringConnections.lightingMonitor = Lighting:GetPropertyChangedSignal("FogStart"):Connect(function()
             if NoFogEnabled and Lighting.FogStart ~= 0 then
                 print("🔄 Fog settings changed by game, reapplying No Fog...")
                 Lighting.FogStart = 0
             end
         end)
         
-        fogMonitoringConnections.lightingMonitor2 = Lighting:GetPropertyChangedSignal("FogEnd"):Connect(function()
+        NoFogEnhanced.fogMonitoringConnections.lightingMonitor2 = Lighting:GetPropertyChangedSignal("FogEnd"):Connect(function()
             if NoFogEnabled and Lighting.FogEnd ~= math.huge then
                 Lighting.FogEnd = math.huge
             end
         end)
         
-        fogMonitoringConnections.lightingMonitor3 = Lighting:GetPropertyChangedSignal("FogColor"):Connect(function()
+        NoFogEnhanced.fogMonitoringConnections.lightingMonitor3 = Lighting:GetPropertyChangedSignal("FogColor"):Connect(function()
             if NoFogEnabled and Lighting.FogColor ~= Color3.fromRGB(255, 255, 255) then
                 Lighting.FogColor = Color3.fromRGB(255, 255, 255)
             end
         end)
         
         -- 4. Monitor player movement for area changes (enhanced detection)
-        fogMonitoringConnections.playerMonitor = RunService.Heartbeat:Connect(function()
+        NoFogEnhanced.fogMonitoringConnections.playerMonitor = RunService.Heartbeat:Connect(function()
             if NoFogEnabled then
                 pcall(function()
                     local player = game.Players.LocalPlayer
                     if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                         -- Check for area change every 3 seconds when player is moving
                         local currentTime = tick()
-                        if currentTime - lastAreaCheck >= 3 then
+                        if currentTime - NoFogEnhanced.lastAreaCheck >= 3 then
                             if detectAreaChange() then
                                 -- Area changed, do a complete fog removal scan
                                 print("🗺️ Player moved to new area, performing complete fog scan...")
@@ -1225,12 +1227,12 @@ local function toggleNoFog(enabled)
             NoFogConnection = nil
         end
         
-        for key, connection in pairs(fogMonitoringConnections) do
+        for key, connection in pairs(NoFogEnhanced.fogMonitoringConnections) do
             if connection then
                 connection:Disconnect()
             end
         end
-        fogMonitoringConnections = {}
+        NoFogEnhanced.fogMonitoringConnections = {}
 
         -- Restore original lighting values
         if typeof(originalFogStart) == "number" then
@@ -1245,8 +1247,9 @@ local function toggleNoFog(enabled)
 
         -- Clear tracking variables
         originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
-        currentPlayerArea = nil
-        processedFogObjects = {}
+        NoFogEnhanced.currentPlayerArea = nil
+        NoFogEnhanced.processedFogObjects = {}
+        NoFogEnhanced.lastAreaCheck = 0
 
         showNotification("🌁 No Fog disabled", 2)
         print("✅ Enhanced No Fog deactivated")
@@ -6695,18 +6698,18 @@ if NoFogConnection then
 end
 
 -- Disconnect all fog monitoring connections
-for key, connection in pairs(fogMonitoringConnections) do
+for key, connection in pairs(NoFogEnhanced.fogMonitoringConnections) do
     if connection then
         connection:Disconnect()
     end
 end
-fogMonitoringConnections = {}
+NoFogEnhanced.fogMonitoringConnections = {}
 
 -- Reset fog tracking variables
 originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
-processedFogObjects = {}
-currentPlayerArea = nil
-lastAreaCheck = 0
+NoFogEnhanced.processedFogObjects = {}
+NoFogEnhanced.currentPlayerArea = nil
+NoFogEnhanced.lastAreaCheck = 0
 
 -- Reset FPS Boost
 FPSBoostEnabled = false
