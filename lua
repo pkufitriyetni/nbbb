@@ -338,12 +338,18 @@ local frozenHungerValue = nil
 local hungerAttributeName = nil
 local originalSetAttribute = nil
 
--- Weather + NoFog Variables
+-- Weather + NoFog Variables (Enhanced)
 local WeatherEnabled = false
 local WeatherConnection = nil
 local NoFogEnabled = false
 local NoFogConnection = nil
 local originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
+
+-- Enhanced No Fog Variables
+local processedFogObjects = {}
+local lastAreaCheck = 0
+local currentPlayerArea = nil
+local fogMonitoringConnections = {}
 
 -- Lighting Control Variables
 local AlwaysBrightEnabled = false
@@ -931,78 +937,320 @@ else
 end
 end
 
--- === NO FOG FUNCTIONS ===
+-- === ENHANCED NO FOG FUNCTIONS ===
+
+-- Variables for enhanced fog monitoring
+local processedFogObjects = {}
+local lastAreaCheck = 0
+local currentPlayerArea = nil
+local fogMonitoringConnections = {}
+
+-- Function to scan and remove fog from all workspace objects
+local function scanAndRemoveFogFromWorkspace()
+    pcall(function()
+        -- Scan all descendants in workspace for fog-related objects
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj and obj.Parent then
+                -- Handle Atmosphere objects in models/folders
+                if obj:IsA("Atmosphere") then
+                    obj.Density = 0
+                    obj.Offset = 0
+                    obj.Color = Color3.fromRGB(255, 255, 255)
+                    obj.Decay = Color3.fromRGB(255, 255, 255)
+                    obj.Glare = 0
+                    obj.Haze = 0
+                end
+                
+                -- Handle Clouds objects
+                if obj:IsA("Clouds") then
+                    obj.Enabled = false
+                    obj.Density = 0
+                end
+                
+                -- Handle fog-related Part properties
+                if obj:IsA("BasePart") then
+                    -- Some games use LocalTransparencyModifier for fog effects
+                    if obj.LocalTransparencyModifier and obj.LocalTransparencyModifier > 0 then
+                        obj.LocalTransparencyModifier = 0
+                    end
+                end
+                
+                -- Handle ParticleEmitters that might create fog effects
+                if obj:IsA("ParticleEmitter") then
+                    local objName = obj.Name:lower()
+                    if objName:find("fog") or objName:find("mist") or objName:find("haze") then
+                        obj.Enabled = false
+                    end
+                end
+                
+                -- Handle area-specific fog folders/models
+                if obj:IsA("Folder") or obj:IsA("Model") then
+                    local objName = obj.Name:lower()
+                    if objName:find("fog") or objName:find("weather") or objName:find("atmosphere") then
+                        -- Disable all ParticleEmitters in fog folders
+                        for _, child in pairs(obj:GetDescendants()) do
+                            if child:IsA("ParticleEmitter") then
+                                child.Enabled = false
+                            elseif child:IsA("Atmosphere") then
+                                child.Density = 0
+                                child.Offset = 0
+                            elseif child:IsA("Clouds") then
+                                child.Enabled = false
+                                child.Density = 0
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Enhanced function to detect area/map changes
+local function detectAreaChange()
+    pcall(function()
+        local player = game.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return false
+        end
+        
+        local playerPosition = player.Character.HumanoidRootPart.Position
+        local currentTime = tick()
+        
+        -- Check if enough time has passed since last check
+        if currentTime - lastAreaCheck < 2 then
+            return false
+        end
+        
+        lastAreaCheck = currentTime
+        
+        -- Simple area detection based on position ranges
+        local newArea = nil
+        local posX, posZ = playerPosition.X, playerPosition.Z
+        
+        -- Define area boundaries (adjust these based on the actual game)
+        if posX < 100 and posZ < 100 then
+            newArea = "Area1"
+        elseif posX >= 100 and posX < 500 and posZ < 100 then
+            newArea = "Area2"
+        elseif posZ >= 100 and posZ < 500 then
+            newArea = "Area3"
+        else
+            newArea = "AreaOther"
+        end
+        
+        -- Check if area changed
+        if currentPlayerArea ~= newArea then
+            currentPlayerArea = newArea
+            return true
+        end
+        
+        return false
+    end)
+    
+    return false
+end
+
+-- Enhanced applyNoFog function with comprehensive fog removal
 local function applyNoFog()
--- Remove all fog completely
-Lighting.FogStart = 0
-Lighting.FogEnd = math.huge  -- Infinite distance
-Lighting.FogColor = Color3.fromRGB(255, 255, 255)  -- White fog (invisible)
-
--- Additional fog removal for all possible fog sources
-pcall(function()
--- Remove atmosphere effects
-if Lighting:FindFirstChild("Atmosphere") then
-  Lighting.Atmosphere.Density = 0
-  Lighting.Atmosphere.Offset = 0
-  Lighting.Atmosphere.Color = Color3.fromRGB(255, 255, 255)
-  Lighting.Atmosphere.Decay = Color3.fromRGB(255, 255, 255)
-  Lighting.Atmosphere.Glare = 0
-  Lighting.Atmosphere.Haze = 0
+    -- Remove global lighting fog
+    Lighting.FogStart = 0
+    Lighting.FogEnd = math.huge
+    Lighting.FogColor = Color3.fromRGB(255, 255, 255)
+    
+    -- Enhanced atmosphere and cloud removal
+    pcall(function()
+        if Lighting:FindFirstChild("Atmosphere") then
+            Lighting.Atmosphere.Density = 0
+            Lighting.Atmosphere.Offset = 0
+            Lighting.Atmosphere.Color = Color3.fromRGB(255, 255, 255)
+            Lighting.Atmosphere.Decay = Color3.fromRGB(255, 255, 255)
+            Lighting.Atmosphere.Glare = 0
+            Lighting.Atmosphere.Haze = 0
+        end
+        
+        if Lighting:FindFirstChild("Clouds") then
+            Lighting.Clouds.Enabled = false
+            Lighting.Clouds.Density = 0
+        end
+    end)
+    
+    -- Enhanced terrain fog removal
+    pcall(function()
+        local terrain = workspace.Terrain
+        if terrain then
+            terrain.ReadVoxels = function() return end
+            -- Additional terrain properties that might affect fog
+            if terrain.WaterReflectance then terrain.WaterReflectance = 0 end
+            if terrain.WaterTransparency then terrain.WaterTransparency = 1 end
+        end
+    end)
+    
+    -- Scan entire workspace for fog objects
+    scanAndRemoveFogFromWorkspace()
+    
+    -- Check if area changed and reapply if necessary
+    if detectAreaChange() then
+        print("🗺️ Area change detected, reapplying No Fog...")
+        -- Wait a bit and reapply to handle area-specific fog loading
+        wait(0.5)
+        scanAndRemoveFogFromWorkspace()
+    end
 end
 
--- Remove clouds
-if Lighting:FindFirstChild("Clouds") then
-  Lighting.Clouds.Enabled = false
-  Lighting.Clouds.Density = 0
-end
-end)
-
--- Remove fog from terrain
-pcall(function()
-local terrain = workspace.Terrain
-if terrain then
-  terrain.ReadVoxels = function() return end
-end
-end)
-end
-
+-- Enhanced toggleNoFog function with multi-area support
 local function toggleNoFog(enabled)
-features.noFog = enabled
-NoFogEnabled = enabled
+    features.noFog = enabled
+    NoFogEnabled = enabled
 
-if enabled then
-  -- Snapshot nilai awal
-  originalFogStart = Lighting.FogStart
-  originalFogEnd = Lighting.FogEnd
-  originalFogColor = Lighting.FogColor
+    if enabled then
+        -- Store original lighting values
+        originalFogStart = Lighting.FogStart
+        originalFogEnd = Lighting.FogEnd
+        originalFogColor = Lighting.FogColor
+        
+        -- Reset area tracking
+        currentPlayerArea = nil
+        lastAreaCheck = 0
+        processedFogObjects = {}
 
-  -- Apply no fog
-  applyNoFog()
-  NoFogConnection = RunService.RenderStepped:Connect(applyNoFog)
+        -- Apply no fog immediately
+        applyNoFog()
 
-  showNotification("🌫️ No Fog enabled!", 2)
-else
-  if NoFogConnection then
-    NoFogConnection:Disconnect()
-    NoFogConnection = nil
-  end
+        -- Setup multiple monitoring connections for robust fog removal
+        
+        -- 1. Primary RenderStepped connection for constant monitoring
+        NoFogConnection = RunService.RenderStepped:Connect(applyNoFog)
+        
+        -- 2. Monitor workspace changes for new objects/areas
+        fogMonitoringConnections.workspaceMonitor = workspace.DescendantAdded:Connect(function(obj)
+            if NoFogEnabled then
+                wait(0.1) -- Small delay to let object fully load
+                pcall(function()
+                    -- Handle new Atmosphere objects
+                    if obj:IsA("Atmosphere") then
+                        obj.Density = 0
+                        obj.Offset = 0
+                        obj.Color = Color3.fromRGB(255, 255, 255)
+                        obj.Decay = Color3.fromRGB(255, 255, 255)
+                        obj.Glare = 0
+                        obj.Haze = 0
+                    end
+                    
+                    -- Handle new Clouds objects
+                    if obj:IsA("Clouds") then
+                        obj.Enabled = false
+                        obj.Density = 0
+                    end
+                    
+                    -- Handle new fog-related ParticleEmitters
+                    if obj:IsA("ParticleEmitter") then
+                        local objName = obj.Name:lower()
+                        if objName:find("fog") or objName:find("mist") or objName:find("haze") then
+                            obj.Enabled = false
+                        end
+                    end
+                    
+                    -- If a model/folder with fog-related name is added, scan it
+                    if (obj:IsA("Model") or obj:IsA("Folder")) then
+                        local objName = obj.Name:lower()
+                        if objName:find("fog") or objName:find("weather") or objName:find("atmosphere") or objName:find("area") then
+                            print("🗺️ New area/fog object detected: " .. obj.Name)
+                            -- Scan this new object for fog elements
+                            for _, child in pairs(obj:GetDescendants()) do
+                                if child:IsA("ParticleEmitter") then
+                                    child.Enabled = false
+                                elseif child:IsA("Atmosphere") then
+                                    child.Density = 0
+                                    child.Offset = 0
+                                elseif child:IsA("Clouds") then
+                                    child.Enabled = false
+                                    child.Density = 0
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        end)
+        
+        -- 3. Monitor Lighting property changes (in case game scripts override them)
+        fogMonitoringConnections.lightingMonitor = Lighting:GetPropertyChangedSignal("FogStart"):Connect(function()
+            if NoFogEnabled and Lighting.FogStart ~= 0 then
+                print("🔄 Fog settings changed by game, reapplying No Fog...")
+                Lighting.FogStart = 0
+            end
+        end)
+        
+        fogMonitoringConnections.lightingMonitor2 = Lighting:GetPropertyChangedSignal("FogEnd"):Connect(function()
+            if NoFogEnabled and Lighting.FogEnd ~= math.huge then
+                Lighting.FogEnd = math.huge
+            end
+        end)
+        
+        fogMonitoringConnections.lightingMonitor3 = Lighting:GetPropertyChangedSignal("FogColor"):Connect(function()
+            if NoFogEnabled and Lighting.FogColor ~= Color3.fromRGB(255, 255, 255) then
+                Lighting.FogColor = Color3.fromRGB(255, 255, 255)
+            end
+        end)
+        
+        -- 4. Monitor player movement for area changes (enhanced detection)
+        fogMonitoringConnections.playerMonitor = RunService.Heartbeat:Connect(function()
+            if NoFogEnabled then
+                pcall(function()
+                    local player = game.Players.LocalPlayer
+                    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        -- Check for area change every 3 seconds when player is moving
+                        local currentTime = tick()
+                        if currentTime - lastAreaCheck >= 3 then
+                            if detectAreaChange() then
+                                -- Area changed, do a complete fog removal scan
+                                print("🗺️ Player moved to new area, performing complete fog scan...")
+                                wait(1) -- Give time for area to load
+                                scanAndRemoveFogFromWorkspace()
+                            end
+                        end
+                    end
+                end)
+            end
+        end)
 
-  -- Restore original values
-  if typeof(originalFogStart) == "number" then
-    Lighting.FogStart = originalFogStart
-  end
-  if typeof(originalFogEnd) == "number" then
-    Lighting.FogEnd = originalFogEnd
-  end
-  if typeof(originalFogColor) == "Color3" then
-    Lighting.FogColor = originalFogColor
-  end
+        showNotification("🌫️ Enhanced No Fog enabled! (Multi-area support)", 3)
+        print("✅ Enhanced No Fog activated with workspace monitoring")
+        
+    else
+        -- Disconnect all monitoring connections
+        if NoFogConnection then
+            NoFogConnection:Disconnect()
+            NoFogConnection = nil
+        end
+        
+        for key, connection in pairs(fogMonitoringConnections) do
+            if connection then
+                connection:Disconnect()
+            end
+        end
+        fogMonitoringConnections = {}
 
-  -- Clear snapshot
-  originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
+        -- Restore original lighting values
+        if typeof(originalFogStart) == "number" then
+            Lighting.FogStart = originalFogStart
+        end
+        if typeof(originalFogEnd) == "number" then
+            Lighting.FogEnd = originalFogEnd
+        end
+        if typeof(originalFogColor) == "Color3" then
+            Lighting.FogColor = originalFogColor
+        end
 
-  showNotification("🌁 No Fog disabled", 2)
-end
+        -- Clear tracking variables
+        originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
+        currentPlayerArea = nil
+        processedFogObjects = {}
+
+        showNotification("🌁 No Fog disabled", 2)
+        print("✅ Enhanced No Fog deactivated")
+    end
 end
 
 -- Store original settings untuk restore nanti
@@ -6439,13 +6687,26 @@ WeatherConnection:Disconnect()
 WeatherConnection = nil
 end
 
--- Reset No Fog
+-- Reset No Fog (Enhanced system)
 NoFogEnabled = false
 if NoFogConnection then
-NoFogConnection:Disconnect()
-NoFogConnection = nil
+    NoFogConnection:Disconnect()
+    NoFogConnection = nil
 end
+
+-- Disconnect all fog monitoring connections
+for key, connection in pairs(fogMonitoringConnections) do
+    if connection then
+        connection:Disconnect()
+    end
+end
+fogMonitoringConnections = {}
+
+-- Reset fog tracking variables
 originalFogStart, originalFogEnd, originalFogColor = nil, nil, nil
+processedFogObjects = {}
+currentPlayerArea = nil
+lastAreaCheck = 0
 
 -- Reset FPS Boost
 FPSBoostEnabled = false
